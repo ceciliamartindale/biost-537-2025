@@ -2,8 +2,11 @@
 title: "BIOST/EPI 537 Final Group Project"
 author: "Geyue Li, Cecilia Martindale, Sarah Garcia"
 date: "`r Sys.Date()`"
-output: html_document
-editor_options: 
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+editor_options:
   chunk_output_type: console
 ---
 
@@ -20,8 +23,11 @@ library(ggplot2)
 library(dplyr)
 library(knitr)
 library(broom)
+library(table1)
+library(kableExtra)
 
-bmt <- read.csv("~/Documents/UW classes/survival analysis/bmt.csv")
+#bmt <- read.csv("~/Documents/UW classes/survival analysis/bmt.csv")
+bmt <- read.csv("~/Downloads/bmt.csv")
 
 dfs_surv <- Surv(time = bmt$tdfs, event = bmt$deltadfs)
 km_fit <- survfit(dfs_surv ~ 1)
@@ -29,10 +35,11 @@ km_fit <- survfit(dfs_surv ~ 1)
 survminer::ggsurvplot(
     fit = km_fit,
     data = bmt,
-    conf.int = TRUE,
+    conf.int = T,
+    palette = "navy",
     xlab = "Time (days)",
     ylab = "Disease-Free Survival Probability",
-    title = "Kaplan-Meier Curve for Disease-Free Survival"
+    title = "Kaplan-Meier Curve for Disease-Free Survival of All Participants"
 )
 
 summary(km_fit)
@@ -108,14 +115,84 @@ fisher.test(table_hospital_fab)
 table_mtx_fab <- table(bmt$mtx, bmt$fab)
 chisq.test(table_mtx_fab)
 
+# table 1 by disease or FAB classification
+bmt <- bmt %>%
+  mutate(disgroupCat = factor(disgroup,
+                              levels = c(1, 2, 3),
+                              labels = c("All", "Low Risk AML", "High Risk AML")),
+         maleCat = factor(male,
+                          levels = c(0, 1),
+                          labels = c("Female", "Male")),
+         cmvCat = factor(cmv,
+                         levels = c(0, 1),
+                         labels = c("CMV Negative", "CMV Positive")),
+         donormaleCat = factor(donormale,
+                               levels = c(0, 1),
+                               labels = c("Female Donor", "Male Donor")),
+         donorcmvCat = factor(donorcmv,
+                              levels = c(0, 1),
+                              labels = c("CMV Negative Donor", "CMV Positive Donor")),
+         fabCat = factor(fab,
+                         levels = c(0, 1),
+                         labels = c("Otherwise", "FAB Grade 4 or 5 and AML")),
+         hospitalCat = factor(hospital,
+                              levels = c(1, 2, 3, 4),
+                              labels = c("OSU", "Alfred", "St. Vincent", "Hahnemann")),
+         mtxCat = factor(mtx,
+                         levels = c(0, 1),
+                         labels = c("No", "Yes")),
+         deltasCat = factor(deltas,
+                            levels = c(0, 1),
+                            labels = c("Alive", "Dead")),
+         deltarCat = factor(deltar,
+                            levels = c(0,1),
+                            labels = c("Disease-free", "Relapse")),
+         deltadfsCat = factor(deltadfs,
+                            levels = c(0,1),
+                            labels = c("Alive and Disease-free", "Dead or Relapsed")),
+         deltaaCat = factor(deltaa,
+                            levels = c(0,1),
+                            labels = c("No aGVHD", "aGVHD")),
+         deltapCat = factor(deltap,
+                            levels = c(0,1),
+                            labels = c("Not Recovered", "Recovered")))
+
+label(bmt$deltarCat) <- "Replase"
+label(bmt$deltasCat) <- "Death"
+label(bmt$deltadfsCat) <- "Disease-free Survival"
+label(bmt$deltaaCat) <- "aGVHD"
+label(bmt$deltapCat) <- "Recovery of Normal Platelet Levels"
+label(bmt$age) <- "Patient Age"
+label(bmt$maleCat) <- "Patient Sex"
+label(bmt$cmvCat) <- "Patient CMV Status"
+label(bmt$donorage) <- "Donor Age"
+label(bmt$donormaleCat) <- "Donor Sex"
+label(bmt$donorcmvCat) <- "Donor CMV Status"
+label(bmt$waittime) <- "Wait Time until Transplant (Days)"
+label(bmt$fabCat) <- "Disease Subtype"
+label(bmt$hospitalCat) <- "Recruitment Center"
+label(bmt$mtxCat) <- "Prophylactic Methotrexate Use"
+
+# by disease group
+disgroup_tab1 <- table1(~ deltarCat + deltadfsCat + deltaaCat + deltasCat + deltapCat + age + donorage + waittime + maleCat + cmvCat + hospitalCat + mtxCat | disgroupCat, 
+                        data = bmt,
+                        caption = "Baseline Descriptive Statistics by Disease Group")
+disgroup_tab1
+
+# by fab classification
+fab_tab1 <- table1(~ deltarCat + deltadfsCat + deltaaCat + deltasCat + deltapCat + age + donorage + waittime + maleCat + cmvCat + hospitalCat + mtxCat | fabCat, 
+                   data = bmt,
+                   caption = "Baseline Descriptive Statistics by FAB Classification")
+fab_tab1
+
 ```
 
 # 3. Are any of the measured baseline variables associated with differences in disease-free survival?
 
 ```{r}
-baseline_vars <- c("age", "male", "cmv", "as.factor(disgroup)", 
-                   "donorage", "donormale", "donorcmv", 
-                   "waittime", "as.factor(hospital)", "mtx")
+baseline_vars <- c("age", "maleCat", "cmvCat", "disgroupCat", 
+                   "donorage", "donormaleCat", "donorcmvCat", 
+                   "waittime", "hospitalCat", "mtxCat")
 
 univariate_results <- lapply(baseline_vars, function(var) {
     formula <- as.formula(paste("dfs_surv ~", var))
@@ -143,7 +220,7 @@ dfs_surv <- Surv(time = bmt$tdfs, event = bmt$deltadfs)
 relapse_surv <- Surv(time = bmt$tdfs, event = bmt$deltar)
 
 ## univariate Cox for disease-free survival
-cox_dfs_unadj <- coxph(dfs_surv ~ deltaa + age + as.factor(hospital) + male, data = bmt)
+cox_dfs_unadj <- coxph(dfs_surv ~ deltaa, data = bmt)
 dfs_summary <- tidy(cox_dfs_unadj, conf.int = TRUE, exponentiate = TRUE)
 dfs_summary
 
@@ -151,11 +228,11 @@ km_dfs <- survfit(dfs_surv ~ deltaa, data = bmt)
 
 ggsurvplot(km_dfs, conf.int = TRUE, pval = TRUE,
            xlab = "Time (days)", 
-           ylab = "Disease-Free Survival Probability",
+           ylab = "Disease-free Survival Probability",
            legend.labs = c("No aGVHD", "aGVHD"),
-           title = "DFS by aGVHD Status")
+           title = "Disease-free Survival by aGVHD Status")
 
-## multivariable Cox for dfs
+## multivariate Cox for dfs
 cox_dfs_adj <- coxph(dfs_surv ~ deltaa + age + as.factor(hospital) + male, data = bmt)
 dfs_summary_adj <- tidy(cox_dfs_adj, conf.int = T, exponentiate = T)
 dfs_summary_adj
@@ -173,10 +250,42 @@ ggsurvplot(km_relapse, conf.int = TRUE, pval = TRUE,
            legend.labs = c("No aGVHD", "aGVHD"),
            title = "Relapse by aGVHD Status")
 
-## multivariable Cox for relapse
+## multivariate Cox for relapse
 cox_relapse_adj <- coxph(relapse_surv ~ deltaa + age + as.factor(hospital) + male, data = bmt)
 relapse_summary_adj <- tidy(cox_relapse_adj, conf.int = T, exponentiate = T)
 relapse_summary_adj
+
+###############################b
+
+# time-varying exposure added
+
+## univariate Cox for dfs
+tdata_dfs <- tmerge(data1 = bmt,
+             data2= bmt,
+             id = id,
+             event = event(tdfs, deltadfs),
+             agvhd_tv = tdc(ta))
+
+cox_dfstime <- coxph(Surv(tstart, tdfs, deltadfs) ~ agvhd_tv + cluster(id), data = tdata_dfs)
+summary(cox_dfstime)
+
+## multivariate Cox for dfs
+cox_dfstime_adj <- coxph(Surv(tstart, tdfs, deltadfs) ~ agvhd_tv + cluster(id) + age + maleCat + hospitalCat, data = tdata_dfs)
+summary(cox_dfstime_adj)
+
+## univariate Cox for relapse
+tdata_re <- tmerge(data1 = bmt,
+                   data2 = bmt,
+                   id = id,
+                   event = event(tdfs, deltar),
+                   agvhd_tv = tdc(ta))
+
+cox_retime <- coxph(Surv(tstart, tdfs, deltar) ~ agvhd_tv + cluster(id), data = tdata_re)
+summary(cox_retime)
+
+## multivariate Cox for relapse
+cox_retime_adj <- coxph(Surv(tstart, tdfs, deltar) ~ agvhd_tv + cluster(id) + age + maleCat + hospitalCat, data = tdata_re)
+summary(cox_retime_adj)
 ```
 
 
@@ -187,9 +296,9 @@ bmt_agvhd <- subset(bmt, deltaa == 1)
 
 dfs_surv_agvhd <- Surv(time = bmt_agvhd$tdfs, event = bmt_agvhd$deltadfs)
 
-baseline_vars <- c("age", "male", "cmv", "as.factor(disgroup)", 
-                   "donorage", "donormale", "donorcmv", 
-                   "waittime", "as.factor(hospital)", "mtx")
+baseline_vars <- c("age", "maleCat", "cmvCat", "disgroupCat", 
+                   "donorage", "donormaleCat", "donorcmvCat", 
+                   "waittime", "hospitalCat", "mtxCat")
 
 uni_agvhd <- lapply(baseline_vars, function(var) {
     formula <- as.formula(paste("dfs_surv_agvhd ~", var))
@@ -218,7 +327,7 @@ ggsurvplot(km_agvhd, conf.int = TRUE, pval = TRUE,
            xlab = "Time to aGVHD (days)",
            ylab = "Cumulative Incidence of aGVHD",
            legend.labs = c("No Methotrexate", "Methotrexate"),
-           title = "Time to aGVHD by Methotrexate Use")
+           title = "Time to aGVHD by Prophylactice Methotrexate Use")
 
 ## univariate Cox
 cox_mtx <- coxph(agvhd_surv ~ mtx, data = bmt)
@@ -227,12 +336,12 @@ univariate_mtx <- tidy(cox_mtx, conf.int = TRUE, exponentiate=TRUE)
 kable(univariate_mtx[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
       digits = 3, caption = "Univariate Cox Regression: Methotrexate and aGVHD Risk")
 
-## multivariable Cox w/ confounders
-cox_adj <- coxph(agvhd_surv ~ mtx + age + male + as.factor(disgroup) + waittime + as.factor(hospital), data = bmt)
-multivariable_mtx <- tidy(cox_adj, conf.int = TRUE, exponentiate=TRUE)
+## multivariate Cox w/ confounders
+cox_adj <- coxph(agvhd_surv ~ mtx + age + maleCat + disgroupCat + waittime + hospitalCat, data = bmt)
+multivariate_mtx <- tidy(cox_adj, conf.int = TRUE, exponentiate=TRUE)
 
-kable(multivariable_mtx[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
-      digits = 3, caption = "Multivariable Cox Regression: Methotrexate and aGVHD Risk")
+kable(multivariate_mtx[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
+      digits = 3, caption = "multivariate Cox Regression: Methotrexate and aGVHD Risk")
 
 
 ```
@@ -249,9 +358,9 @@ km_dfs <- survfit(dfs_surv ~ deltap, data = bmt)
 
 ggsurvplot(km_dfs, conf.int = TRUE, pval = TRUE,
            xlab = "Time (days)",
-           ylab = "Disease-Free Survival Probability",
+           ylab = "Disease-free Survival Probability",
            legend.labs = c("No Platelet Recovery", "Platelet Recovery"),
-           title = "DFS by Platelet Recovery")
+           title = "Disease-free Survival by Platelet Recovery")
 
 ## KM for relapse
 km_relapse <- survfit(relapse_surv ~ deltap, data = bmt)
@@ -264,30 +373,31 @@ ggsurvplot(km_relapse, conf.int = TRUE, pval = TRUE,
 
 ## univariate Cox for dfs
 cox_dfs <- coxph(dfs_surv ~ deltap, data = bmt)
+cox_dfs
 univariate_dfs <- tidy(cox_dfs, conf.int = TRUE, exponentiate=TRUE)
 
 kable(univariate_dfs[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
       digits = 3, caption = "Univariate Cox: Platelet Recovery and DFS")
 
-## multivariable Cox for dfs
+## multivariate Cox for dfs
 cox_dfs_adj <- coxph(dfs_surv ~ deltap + age + as.factor(hospital) + as.factor(disgroup) + male, data = bmt)
 multi_dfs <- tidy(cox_dfs_adj, conf.int = T, exponentiate = T)
 
 kable(multi_dfs[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
-      digits = 3, caption = "Multivariable Cox: Platelet Recovery and DFS")
+      digits = 3, caption = "multivariate Cox: Platelet Recovery and DFS")
 
 ## univariate Cox for relapse
 cox_relapse <- coxph(relapse_surv ~ deltap, data = bmt)
-univariate_relapse <- tidy(cox_relapse, conf.int = TRUE)
+univariate_relapse <- tidy(cox_relapse, conf.int = TRUE, exponentiate = TRUE)
 
 kable(univariate_relapse[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
       digits = 3, caption = "Univariate Cox: Platelet Recovery and Relapse Risk")
 
-## multivariable Cox for relapse
-cox_relapse_adj <- coxph(relapse_surv ~ deltap + age + as.factor(hospital) + + as.factor(disgroup)+ male, data = bmt)
+## multivariate Cox for relapse
+cox_relapse_adj <- coxph(relapse_surv ~ deltap + age + as.factor(hospital) + as.factor(disgroup) + male, data = bmt)
 multi_relapse <- tidy(cox_relapse_adj, conf.int = T, exponentiate = T)
 
 kable(multi_relapse[, c("term", "estimate", "conf.low", "conf.high", "p.value")], 
-      digits = 3, caption = "Multivariable Cox: Platelet Recovery and DFS")
+      digits = 3, caption = "multivariate Cox: Platelet Recovery and DFS")
 
 ```
